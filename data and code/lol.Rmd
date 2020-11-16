@@ -1,0 +1,23 @@
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+```{r}
+data <- read_csv("winperc.csv")
+ 
+
+plot <- ggplot(data=data, aes(y=data$`Win Percentage`, x=reorder(Round,`Win Percentage`), fill=data$Round)) + geom_bar(stat="identity", color="black") + coord_flip() + ylab("Win Percentage") + xlab("Round") + ggtitle("Average Round by Round Win Percentage") + theme_bw() + theme(legend.position = "none") + geom_text(aes(label=`Win Percentage`), hjust=-0.3, position=position_dodge(width=1), inherit.aes = TRUE) + ylim(c(0, 1)) + theme(text = element_text(size=15))
+
+plot
+
+ggsave("plot.jpeg",plot, width = 10.28, height=5.47)
+```
+
+```{r}
+                                                                                                  
+                                                                                                  
+
+```
+

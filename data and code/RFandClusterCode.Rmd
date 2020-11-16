@@ -1,0 +1,301 @@
+
+##Packages and Datasets
+```{r}
+library(tidyverse)
+library(mclust)
+library(fastDummies)
+library(randomForest)
+
+rawdata <- read_csv("FinalPositionIDPlayerDataSet.csv")
+tournament <- read_csv("TeamTourneySuccess.csv")
+```
+
+##Creating Clusters and Positions with Model Based Clustering and Random Forests
+```{r}
+offensivedata <- rawdata %>% select(c(Min_per, usg, ORB_per, AST_per, TO_per, TPA, TP_per, FT_per, ftr, ht, weight, exp, close2att, close2_per, far2att, far2_per, dunkatt, dunk_per))
+offensivedata[is.na(offensivedata)] <- 0
+
+defensivedata <- rawdata %>% select(c(Min_per, DRB_per, pfr, stl_per, blk_per, ht, stops, weight, exp))
+defensivedata[is.na(defensivedata)] <- 0
+
+
+offdf <- scale(offensivedata)
+offcluster <- Mclust(offdf)
+summary(offcluster)
+offensivedata$Cluster <- offcluster$classification
+offensivedata$cluster1prob <- offcluster$z[,1]
+offensivedata$cluster2prob <- offcluster$z[,2]
+offensivedata$cluster3prob <- offcluster$z[,3]
+offensivedata$cluster4prob <- offcluster$z[,4]
+offensivedata$cluster5prob <- offcluster$z[,5]
+offensivedata$cluster6prob <- offcluster$z[,6]
+offensivedata$cluster7prob <- offcluster$z[,7]
+offensivedata$cluster8prob <- offcluster$z[,8]
+offensivedata$cluster9prob <- offcluster$z[,9]
+offensivedata$player_name <- rawdata$player_name
+write_csv(offensivedata, "OffCluster.csv")
+
+
+defdf <- scale(defensivedata)
+defcluster <- Mclust(defdf)
+summary(defcluster)
+defensivedata$Cluster <- defcluster$classification
+defensivedata$cluster1prob <- defcluster$z[,1]
+defensivedata$cluster2prob <- defcluster$z[,2]
+defensivedata$cluster3prob <- defcluster$z[,3]
+defensivedata$cluster4prob <- defcluster$z[,4]
+defensivedata$cluster5prob <- defcluster$z[,5]
+defensivedata$cluster6prob <- defcluster$z[,6]
+defensivedata$cluster7prob <- defcluster$z[,7]
+defensivedata$cluster8prob <- defcluster$z[,8]
+defensivedata$cluster9prob <- defcluster$z[,9]
+defensivedata$player_name <- rawdata$player_name
+write_csv(defensivedata, "DefCluster.csv")
+
+rfpositiondata <- rawdata %>% select(c(Pos, ht, weight, close2att, close2_per, far2att, far2_per, dunkatt, dunk_per))
+
+rfpositiondata <- fastDummies::dummy_cols(rfpositiondata, select_columns = "Pos")
+rfpositiondata[is.na(rfpositiondata)] <- 0
+
+posCdata <- rfpositiondata %>% select(-c(Pos, Pos_F, Pos_G))
+posFdata <- rfpositiondata %>% select(-c(Pos, Pos_C, Pos_G))
+posGdata <- rfpositiondata %>% select(-c(Pos, Pos_F, Pos_C))
+
+CenterRF <- randomForest(Pos_C ~ ., data=posCdata, ntree=1000)
+ForwardRF <- randomForest(Pos_F ~ ., data=posFdata, ntree=1000)
+GuardRF <- randomForest(Pos_G ~ ., data=posGdata, ntree=1000)
+
+
+CenterPredict = predict(CenterRF, posCdata)
+ForwardPredict = predict(ForwardRF, posFdata)
+GuardPredict = predict(GuardRF, posGdata)
+```
+
+##Merging and combining all columns into one dataframe
+```{r}
+rawdata$schoolID <- paste(rawdata$school, rawdata$year, sep="")
+rawdata$OffCluster <- offcluster$classification
+rawdata$OffCluster1prob <- offcluster$z[,1]
+rawdata$OffCluster2prob <- offcluster$z[,2]
+rawdata$OffCluster3prob <- offcluster$z[,3]
+rawdata$OffCluster4prob <- offcluster$z[,4]
+rawdata$OffCluster5prob <- offcluster$z[,5]
+rawdata$OffCluster6prob <- offcluster$z[,6]
+rawdata$OffCluster7prob <- offcluster$z[,7]
+rawdata$OffCluster8prob <- offcluster$z[,8]
+rawdata$OffCluster9prob <- offcluster$z[,9]
+
+rawdata$DefCluster <- defcluster$classification
+rawdata$DefCluster1prob <- defcluster$z[,1]
+rawdata$DefCluster2prob <- defcluster$z[,2]
+rawdata$DefCluster3prob <- defcluster$z[,3]
+rawdata$DefCluster4prob <- defcluster$z[,4]
+rawdata$DefCluster5prob <- defcluster$z[,5]
+rawdata$DefCluster6prob <- defcluster$z[,6]
+rawdata$DefCluster7prob <- defcluster$z[,7]
+rawdata$DefCluster8prob <- defcluster$z[,8]
+rawdata$DefCluster9prob <- defcluster$z[,9]
+
+rawdata$PredictCenter <- CenterPredict
+rawdata$PredictForward <- ForwardPredict
+rawdata$PredictGuard <- GuardPredict
+rawdata$PositionRF <- ifelse(rawdata$PredictCenter > rawdata$PredictGuard & rawdata$PredictCenter > rawdata$PredictForward, "C", ifelse(rawdata$PredictGuard > rawdata$PredictCenter & rawdata$PredictGuard > rawdata$PredictForward, "G", "F"))
+rawdata$hybrid <- ifelse(rawdata$PredictCenter > 0.4 & rawdata$PredictForward > 0.4, "F-C", ifelse(rawdata$PredictCenter > 0.4 & rawdata$PredictGuard > 0.4, "G-C", ifelse(rawdata$PredictGuard > 0.4 & rawdata$PredictForward > 0.4, "G-F", 0)))
+rawdata$RFFinalPos <- ifelse(rawdata$hybrid==0, rawdata$PositionRF, rawdata$hybrid)
+rawdata$finalposition <- paste(rawdata$OffCluster,"-",rawdata$DefCluster,"-",rawdata$RFFinalPos, sep="")
+
+finaldata <- merge(rawdata, tournament, all.x = TRUE, by="schoolID")
+
+write_csv(finaldata, "FinalRFClusterData.csv")
+```
+
+##LogitModel for Positional Value
+```{r}
+
+finaldata <- read_csv("FinalRFClusterData.csv")
+tournament <- read_csv("TeamTourneySuccess.csv")
+finaldata <- merge(finaldata, tournament, all.x =  TRUE, by="schoolID")
+
+Offprobdata <- finaldata %>% group_by(schoolID) %>% summarize(OffCluster1prob = sum(OffCluster1prob, na.rm = TRUE), OffCluster2prob = sum(OffCluster2prob, na.rm = TRUE), OffCluster3prob = sum(OffCluster3prob, na.rm = TRUE), OffCluster4prob = sum(OffCluster4prob, na.rm = TRUE), OffCluster5prob = sum(OffCluster5prob, na.rm = TRUE), OffCluster6prob = sum(OffCluster6prob, na.rm = TRUE), OffCluster7prob = sum(OffCluster7prob, na.rm = TRUE), OffCluster8prob = sum(OffCluster8prob, na.rm = TRUE), OffCluster9prob = sum(OffCluster9prob, na.rm = TRUE), Round32 = mean(Round32, na.rm=TRUE), Sweet16 = mean(Sweet16, na.rm=TRUE), Elite8 = mean(Elite8, na.rm=TRUE), Final4 = mean(Final4, na.rm = TRUE), Final = mean(Final, na.rm = TRUE), Champion = mean(Champion, na.rm=TRUE))
+
+Defprobdata <- finaldata %>% group_by(schoolID) %>% summarize(DefCluster1prob = sum(DefCluster1prob, na.rm = TRUE), DefCluster2prob = sum(DefCluster2prob, na.rm = TRUE), DefCluster3prob = sum(DefCluster3prob, na.rm = TRUE), DefCluster4prob = sum(DefCluster4prob, na.rm = TRUE), DefCluster5prob = sum(DefCluster5prob, na.rm = TRUE), DefCluster6prob = sum(DefCluster6prob, na.rm = TRUE), DefCluster7prob = sum(DefCluster7prob, na.rm = TRUE), DefCluster8prob = sum(DefCluster8prob, na.rm = TRUE), DefCluster9prob = sum(DefCluster9prob, na.rm = TRUE), Round32 = mean(Round32, na.rm=TRUE), Sweet16 = mean(Sweet16, na.rm=TRUE), Elite8 = mean(Elite8, na.rm=TRUE), Final4 = mean(Final4, na.rm = TRUE), Final = mean(Final, na.rm = TRUE), Champion = mean(Champion, na.rm=TRUE))
+
+offRound32reg <- glm(Round32~.-1-Elite8-Sweet16-Final-Final4-Champion-schoolID,data=Offprobdata)
+offSweet16reg <- glm(Sweet16~.-1-Round32-Elite8-Final-Final4-Champion-schoolID,data=Offprobdata)
+offElite8reg <- glm(Elite8~.-1-Round32-Sweet16-Final-Final4-Champion-schoolID,data=Offprobdata)
+offFinal4reg <- glm(Final4~.-1-Round32-Sweet16-Final-Elite8-Champion-schoolID,data=Offprobdata)
+offFinalreg <- glm(Final~.-1-Round32-Sweet16-Elite8-Final4-Champion-schoolID,data=Offprobdata)
+offChampionreg <- glm(Champion~.-1-Round32-Sweet16-Final-Final4-Elite8-schoolID,data=Offprobdata)
+
+summary(offRound32reg)
+summary(offSweet16reg)
+summary(offElite8reg)
+summary(offFinal4reg)
+summary(offFinalreg)
+summary(offChampionreg)
+
+defRound32reg <- glm(Round32~.-1-Elite8-Sweet16-Final-Final4-Champion-schoolID,data=Defprobdata)
+defSweet16reg <- glm(Sweet16~.-1-Round32-Elite8-Final-Final4-Champion-schoolID,data=Defprobdata)
+defElite8reg <- glm(Elite8~.-1-Final-Round32-Sweet16-Final4-Champion-schoolID,data=Defprobdata)
+defFinal4reg <- glm(Final4~.-1-Final-Round32-Sweet16-Elite8-Champion-schoolID,data=Defprobdata)
+defFinalreg <- glm(Final~.-1-Elite8-Round32-Sweet16-Final4-Champion-schoolID,data=Defprobdata)
+defChampionreg <- glm(Champion~.-1-Final-Round32-Sweet16-Final4-Elite8-schoolID,data=Defprobdata)
+
+summary(defRound32reg)
+summary(defSweet16reg)
+summary(defElite8reg)
+summary(defFinal4reg)
+summary(defFinalreg)
+summary(defChampionreg)
+
+
+```
+
+## DONT RUN ANYTHING BEFORE THIS KUSHAL
+
+##PREDICTIONS USING REG RESULTS
+```{r}
+Offprobdata$OffRound32pred <-(0.11316*Offprobdata$OffCluster2prob)+(0.06756*Offprobdata$OffCluster3prob)+(0.03951*Offprobdata$OffCluster5prob)+(-0.03432*Offprobdata$OffCluster6prob)+(0.19020*Offprobdata$OffCluster7prob)+(0.04911*Offprobdata$OffCluster8prob)+(0.05318*Offprobdata$OffCluster4prob)
+
+Offprobdata$OffSweet16pred <-(-0.044716*Offprobdata$OffCluster1prob)+(0.0965577*Offprobdata$OffCluster2prob)+(0.0241512*Offprobdata$OffCluster3prob)+(-0.0684677*Offprobdata$OffCluster4prob)+(0.1567200*Offprobdata$OffCluster7prob)+(0.0328565*Offprobdata$OffCluster8prob)
+
+Offprobdata$Offelite8pred <-(-0.03269*Offprobdata$OffCluster1prob)+(0.06602*Offprobdata$OffCluster2prob)+(-0.03088*Offprobdata$OffCluster6prob)+(0.09176*Offprobdata$OffCluster7prob)+(-0.02721*Offprobdata$OffCluster9prob)
+
+Offprobdata$Offfinal4pred <-(-0.0252756*Offprobdata$OffCluster1prob)+(0.0331885*Offprobdata$OffCluster2prob)+(0.0542169*Offprobdata$OffCluster7prob)+(-0.0174667*Offprobdata$OffCluster9prob)
+
+Offprobdata$Offfinalpred <-(-0.014208*Offprobdata$OffCluster1prob)+(0.019892*Offprobdata$OffCluster2prob)+(0.019383*Offprobdata$OffCluster7prob)
+
+Offprobdata$Offchampionpred <- (-0.009878*Offprobdata$OffCluster1prob) + (0.010255*Offprobdata$OffCluster7prob)
+
+
+Defprobdata$DefRound32pred <-(0.053183*Defprobdata$DefCluster1prob)+(0.074652*Defprobdata$DefCluster2prob)+(0.238488*Defprobdata$DefCluster4prob)+(-0.080607*Defprobdata$DefCluster6prob)+(0.0156882*Defprobdata$DefCluster9prob)
+
+Defprobdata$DefSweet16pred <-(0.03834*Defprobdata$DefCluster1prob) + (0.05431*Defprobdata$DefCluster2prob) +(-0.06776*Defprobdata$DefCluster3prob)+(0.1735*Defprobdata$DefCluster4prob)+(-0.09856*Defprobdata$DefCluster6prob) + (-0.07175*Defprobdata$DefCluster7prob)+(0.1139*Defprobdata$DefCluster9prob)
+  
+Defprobdata$Defelite8pred <- (0.02877*Defprobdata$DefCluster1prob)+(0.03295*Defprobdata$DefCluster2prob) +(-0.05339*Defprobdata$DefCluster3prob)+(0.11184*Defprobdata$DefCluster4prob)+(-0.05654*Defprobdata$DefCluster6prob)+(-0.03723*Defprobdata$DefCluster8prob)+(0.03981*Defprobdata$DefCluster9prob)
+
+Defprobdata$Deffinal4pred <-(-0.034928*Defprobdata$DefCluster3prob)+(0.067576*Defprobdata$DefCluster4prob)+(-0.028464*Defprobdata$DefCluster6prob)+(-0.034654*Defprobdata$DefCluster7prob)+(-0.025667*Defprobdata$DefCluster8prob)+ (0.027299*Defprobdata$DefCluster9prob)
+
+Defprobdata$Deffinalpred <- (0.014981*Defprobdata$DefCluster1prob)+(-0.020430*Defprobdata$DefCluster3prob)+(0.026687*Defprobdata$DefCluster4prob)+(-0.020977*Defprobdata$DefCluster7prob)
+
+Defprobdata$Defchampionpred <-(0.013995*Defprobdata$DefCluster2prob)+(0.018976*Defprobdata$DefCluster4prob)+(-0.013834*Defprobdata$DefCluster6prob)
+
+
+marchmadness_preds <- merge(Offprobdata,Defprobdata, by=c("schoolID", "Round32", "Sweet16", "Elite8", "Final4", "Final", "Champion"), all=TRUE)
+
+marchmadness_preds <- marchmadness_preds %>% select(c(schoolID, Round32 ,Sweet16, Elite8, Final4, Final, Champion, OffRound32pred, OffSweet16pred, Offelite8pred, Offfinal4pred, Offfinalpred, Offchampionpred,DefRound32pred, DefSweet16pred, Defelite8pred, Deffinal4pred, Deffinalpred, Defchampionpred ))
+
+marchmadness_preds$offanddef_round32pred <- marchmadness_preds$OffRound32pred + marchmadness_preds$DefRound32pred
+marchmadness_preds$offanddef_sweet16pred <- marchmadness_preds$OffSweet16pred + marchmadness_preds$DefSweet16pred
+marchmadness_preds$offanddef_elite8pred <- marchmadness_preds$Offelite8pred + marchmadness_preds$Defelite8pred
+marchmadness_preds$offanddef_final4pred <- marchmadness_preds$Offfinal4pred + marchmadness_preds$Deffinal4pred
+marchmadness_preds$offanddef_finalpred <-  marchmadness_preds$Offfinalpred + marchmadness_preds$Deffinalpred
+marchmadness_preds$offanddef_championpred <- marchmadness_preds$Offchampionpred  + marchmadness_preds$Defchampionpred
+
+
+```
+
+
+##EDA of Clusters
+```{r}
+finaldata <- read_csv("FinalRFClusterData.csv")
+
+offclusterEDA <- finaldata %>% group_by(OffCluster) %>% summarise(exp = mean(exp, na.rm = TRUE), ht = mean(ht, na.rm = TRUE), weight = mean(weight, na.rm = TRUE), mp = mean(mp, na.rm = TRUE), ORtg = mean(ORtg, na.rm = TRUE), usg = mean(usg, na.rm = TRUE), eFG = mean(eFG, na.rm = TRUE), ORB_per = mean(ORB_per, na.rm = TRUE), AST_per = mean(AST_per, na.rm = TRUE), TO_per = mean(TO_per, na.rm = TRUE), TPA = mean(TPA, na.rm = TRUE), TP_per = mean(TP_per, na.rm = TRUE), ftr = mean(ftr, na.rm = TRUE), FT_per = mean(FT_per, na.rm = TRUE), close2att = mean(close2att, na.rm = TRUE), close2_per = mean(close2_per, na.rm = TRUE), far2att = mean(far2att, na.rm = TRUE), far2_per = mean(far2_per, na.rm = TRUE), dunkatt = mean(dunkatt, na.rm = TRUE), dunk_per = mean(dunk_per, na.rm = TRUE), obpm = mean(obpm, na.rm = TRUE), bpm = mean(bpm, na.rm = TRUE), RFFinalPos_C = sum(RFFinalPos_C), RFFinalPos_F = sum(RFFinalPos_F), RFFinalPos_G = sum(RFFinalPos_G), `RFFinalPos_F-C` = sum(`RFFinalPos_F-C`), `RFFinalPos_G-C` = sum(`RFFinalPos_G-C`), `RFFinalPos_G-F` = sum(`RFFinalPos_G-F`))
+
+defclusterEDA <- finaldata %>% group_by(DefCluster) %>% summarise(exp = mean(exp, na.rm = TRUE), ht = mean(ht, na.rm = TRUE), weight = mean(weight, na.rm = TRUE), mp = mean(mp, na.rm = TRUE), DRtg = mean(ORtg, na.rm = TRUE), DRB_per = mean(DRB_per, na.rm = TRUE), blk_per = mean(blk_per, na.rm = TRUE), pfr = mean(pfr, na.rm = TRUE), stl_per = mean(stl_per), dbpm = mean(dbpm, na.rm = TRUE), bpm = mean(bpm, na.rm = TRUE), RFFinalPos_C = sum(RFFinalPos_C), RFFinalPos_F = sum(RFFinalPos_F), RFFinalPos_G = sum(RFFinalPos_G), `RFFinalPos_F-C` = sum(`RFFinalPos_F-C`), `RFFinalPos_G-C` = sum(`RFFinalPos_G-C`), `RFFinalPos_G-F` = sum(`RFFinalPos_G-F`))
+
+write_csv(offclusterEDA, "OffClusterEDA.csv")
+write_csv(defclusterEDA, "DefClusterEDA.csv")
+
+```
+
+
+```{r}
+finaldata <- read_csv("FinalRFClusterData.csv")
+tournament <- read_csv("TeamTourneySuccess.csv")
+finaldata <- merge(finaldata, tournament, all.x =  TRUE, by="schoolID")
+finaldata <- fastDummies::dummy_cols(finaldata, "finalposition")
+
+
+TeamPositionCount <- finaldata %>% select(-c(player_name,ID,Pos,yr,exp,ht,weight,school,conference,pick,GP,Min_per,mp,ORtg,usg,eFG,TS_per,ORB_per,DRB_per,AST_per,TO_per,FTM,FTA,FT_per,twoPM,twoPA,twoP_per,TPM,TPA,TP_per,blk_per,stl_per,ftr,num,pfr,year,pid,`rec-rk`,close2made,close2att,far2made,far2att,close2_per,far2_per,dunkmade,dunkatt,dunk_per,drtg,stops,bpm,obpm,dbpm,OffCluster,OffCluster1prob,OffCluster2prob,OffCluster3prob,OffCluster4prob,OffCluster5prob,OffCluster6prob,OffCluster7prob,OffCluster8prob,OffCluster9prob,DefCluster,DefCluster1prob,DefCluster2prob,DefCluster3prob,DefCluster4prob,DefCluster5prob,DefCluster6prob,DefCluster7prob,DefCluster8prob,DefCluster9prob,PredictCenter,PredictForward,PredictGuard,PositionRF,hybrid,RFFinalPos,finalposition,Round32, Sweet16 ,Elite8, Final4, Final, Champion)) %>% group_by(schoolID) %>% summarise_all(list(sum))
+
+TeamPositionCount <- merge(TeamPositionCount, tournament, all.x = TRUE, by="schoolID")
+
+
+allPosRound32reg <- glm(Round32~.-1-Elite8-Sweet16-Final-Final4-Champion-schoolID,data=TeamPositionCount)
+allPosSweet16reg <- glm(Sweet16~.-1-Elite8-Round32-Final-Final4-Champion-schoolID,data=TeamPositionCount)
+allPosElite8reg <- glm(Elite8~.-1-Final-Round32-Sweet16-Final4-Champion-schoolID,data=TeamPositionCount)
+allPosFinal4reg <- glm(Final4~.-1-Final-Round32-Sweet16-Elite8-Champion-schoolID,data=TeamPositionCount)
+allPosFinalreg <- glm(Final~.-1-Elite8-Round32-Sweet16-Final4-Champion-schoolID,data=TeamPositionCount)
+allPosChampionreg <- glm(Champion~.-1-Sweet16-Round32-Final-Final4-Elite8-schoolID,data=TeamPositionCount)
+
+summary(allPosRound32reg)
+
+allPosRound32regRes <- as.data.frame(summary(allPosRound32reg)$coefficients)
+allPosRound32regRes$FinalPos <- c(rownames(allPosRound32regRes))
+
+allPosSweet16regRes <- as.data.frame(summary(allPosSweet16reg)$coefficients)
+allPosSweet16regRes$FinalPos <- c(rownames(allPosSweet16regRes))
+
+allPosElite8regRes <- as.data.frame(summary(allPosElite8reg)$coefficients)
+allPosElite8regRes$FinalPos <- c(rownames(allPosElite8regRes))
+
+allPosFinal4regRes <- as.data.frame(summary(allPosFinal4reg)$coefficients)
+allPosFinal4regRes$FinalPos <- c(rownames(allPosFinal4regRes))
+
+allPosFinalregRes <- as.data.frame(summary(allPosFinalreg)$coefficients)
+allPosFinalregRes$FinalPos <- c(rownames(allPosFinalregRes))
+
+allPosChampionregRes <- as.data.frame(summary(allPosChampionreg)$coefficients)
+allPosChampionregRes$FinalPos <- c(rownames(allPosChampionregRes))
+
+write_csv(allPosRound32regRes, "Round32AllPositionRegResults.csv")
+write_csv(allPosSweet16regRes, "Sweet16AllPositionRegResults.csv")
+write_csv(allPosElite8regRes, "Elite8AllPositionRegResults.csv")
+write_csv(allPosFinal4regRes, "Final4AllPositionRegResults.csv")
+write_csv(allPosFinalregRes, "FinalAllPositionRegResults.csv")
+write_csv(allPosChampionregRes, "ChampionAllPositionRegResults.csv")
+
+TeamPositionCount$AllPosRound32Pred<-(TeamPositionCount$`finalposition_1-9-G`*0.629436395652132)+(TeamPositionCount$`finalposition_2-2-F`*0.235075289738432)+(TeamPositionCount$`finalposition_2-4-C`*0.160676242401762)+(TeamPositionCount$`finalposition_2-4-F`*0.165142929534154)+(TeamPositionCount$`finalposition_2-4-F-C`*0.515753140201128)+(TeamPositionCount$`finalposition_2-8-C`*0.313893971687634)+(TeamPositionCount$`finalposition_2-8-F-C`*1.16706468700538)+(TeamPositionCount$`finalposition_2-9-C`*0.351618230884174)+(TeamPositionCount$`finalposition_2-9-F`*0.106162591845655)+(TeamPositionCount$`finalposition_2-9-F-C`*0.717946584414072)+(TeamPositionCount$`finalposition_3-4-F`*0.190500896686647)+(TeamPositionCount$`finalposition_3-5-G`*0.08306604752095)+(TeamPositionCount$`finalposition_3-7-F`*0.258419758143478)+(TeamPositionCount$`finalposition_3-8-G`*0.455387297363251)+(TeamPositionCount$`finalposition_3-9-C`*1.08509492270495)+(TeamPositionCount$`finalposition_3-9-F`*0.175753313221137)+(TeamPositionCount$`finalposition_3-9-G`*0.189456006489614)+(TeamPositionCount$`finalposition_5-4-C`*0.203920275770489)+(TeamPositionCount$`finalposition_5-4-F`*0.118240260009869)+(TeamPositionCount$`finalposition_5-4-F-C`*0.471547594272692)+(TeamPositionCount$`finalposition_5-8-F`*0.103050925203264)+(TeamPositionCount$`finalposition_6-6-G`*-0.102051881083644)+(TeamPositionCount$`finalposition_6-8-G`*-0.426794840486895)+(TeamPositionCount$`finalposition_7-1-F`*0.148555833055362)+(TeamPositionCount$`finalposition_7-1-G`*0.0971807257774293)+(TeamPositionCount$`finalposition_7-2-F`*0.228859791969836)+(TeamPositionCount$`finalposition_7-2-G`*0.115193452669456)+(TeamPositionCount$`finalposition_7-4-C`*0.453380222507925)+(TeamPositionCount$`finalposition_7-4-F`*0.297245516773189)+(TeamPositionCount$`finalposition_7-5-G`*0.101522379125861)+(TeamPositionCount$`finalposition_7-9-F`*0.235114092098957)+(TeamPositionCount$`finalposition_7-9-G`*0.255158967157403)+(TeamPositionCount$`finalposition_8-4-G`*-0.969700706276428)+(TeamPositionCount$`finalposition_8-5-G-F`*1.13589284467009)+(TeamPositionCount$`finalposition_8-9-F`*0.45573394740476)+(TeamPositionCount$`finalposition_9-1-F`*0.309018562729166)+(TeamPositionCount$`finalposition_9-1-G`*0.158285419061661)+(TeamPositionCount$`finalposition_9-4-C`*0.469051122142085)+(TeamPositionCount$`finalposition_9-4-F`*0.187107576680499)+(TeamPositionCount$`finalposition_9-4-G`*0.519005876713462)+(TeamPositionCount$`finalposition_9-7-G`*-0.217729852857748)+(TeamPositionCount$`finalposition_9-9-F`*0.12929384589202)
+
+TeamPositionCount$AllPosSweet16Pred<-(TeamPositionCount$`finalposition_1-3-G`*-0.164557616756099)+(TeamPositionCount$`finalposition_1-7-G`*-0.168102815672375)+(TeamPositionCount$`finalposition_1-9-G`*0.670086504976602)+(TeamPositionCount$`finalposition_2-1-G`*-0.31856445314286)+(TeamPositionCount$`finalposition_2-2-F`*0.33684049069686)+(TeamPositionCount$`finalposition_2-4-C`*0.133824852575857)+(TeamPositionCount$`finalposition_2-4-F`*0.190598362499415)+(TeamPositionCount$`finalposition_2-8-F-C`*1.2899325422)+(TeamPositionCount$`finalposition_2-9-F`*0.0891675355969943)+(TeamPositionCount$`finalposition_3-1-G-F`*0.189625906701065)+(TeamPositionCount$`finalposition_3-3-G`*-0.145980693216907)+(TeamPositionCount$`finalposition_3-9-F`*0.110768419717198)+(TeamPositionCount$`finalposition_3-9-G`*0.268046379979182)+(TeamPositionCount$`finalposition_3-9-G-F`*0.277352029608853)+(TeamPositionCount$`finalposition_4-2-F`*0.754018358504432)+(TeamPositionCount$`finalposition_4-7-G`*-0.166178164515927)+(TeamPositionCount$`finalposition_5-1-G`*1.49928248500925)+(TeamPositionCount$`finalposition_5-4-C`*0.115633851870601)+(TeamPositionCount$`finalposition_5-4-F`*0.0840888648573536)+(TeamPositionCount$`finalposition_5-9-C`*0.24924840029873)+(TeamPositionCount$`finalposition_6-5-G`*-0.155420997838766)+(TeamPositionCount$`finalposition_6-6-F`*0.242905141515591)+(TeamPositionCount$`finalposition_6-6-G`*-0.0749594853155052)+(TeamPositionCount$`finalposition_6-6-G-F`*-0.294955035692112)+(TeamPositionCount$`finalposition_6-9-F`*-0.514787632712751)+(TeamPositionCount$`finalposition_7-1-F`*0.216764462773121)+(TeamPositionCount$`finalposition_7-1-G`*0.096898011478983)+(TeamPositionCount$`finalposition_7-2-F`*0.207651403051539)+(TeamPositionCount$`finalposition_7-4-C`*0.551804894558306)+(TeamPositionCount$`finalposition_7-4-F`*0.234620402905845)+(TeamPositionCount$`finalposition_7-9-F`*0.202932302346244)+(TeamPositionCount$`finalposition_7-9-G`*0.189907642296162)+(TeamPositionCount$`finalposition_8-1-G`*0.0632579136478813)+(TeamPositionCount$`finalposition_8-2-G`*0.19089361471607)+(TeamPositionCount$`finalposition_8-3-G`*-0.0905019304483354)+(TeamPositionCount$`finalposition_8-6-G`*-0.142669698731314)+(TeamPositionCount$`finalposition_8-7-G`*-0.640952517362829)+(TeamPositionCount$`finalposition_8-9-F`*0.383949962322162)+(TeamPositionCount$`finalposition_9-2-F`*0.171658462884825)+(TeamPositionCount$`finalposition_9-4-C`*0.408990098790724)+(TeamPositionCount$`finalposition_9-7-G`*-0.16334312792951)
+
+TeamPositionCount$AllPosElite8Pred<-(TeamPositionCount$`finalposition_1-6-G-F`*0.760365116307918)+(TeamPositionCount$`finalposition_1-7-G`*-0.0968337450284127)+(TeamPositionCount$`finalposition_1-8-C`*-0.21570514539393)+(TeamPositionCount$`finalposition_1-8-F`*-0.0603175410106025)+(TeamPositionCount$`finalposition_2-2-F`*0.154918728811232)+(TeamPositionCount$`finalposition_2-4-F`*0.157051289344718)+(TeamPositionCount$`finalposition_2-4-F-C`*0.262143251888334)+(TeamPositionCount$`finalposition_2-8-F-C`*1.07030330746768)+(TeamPositionCount$`finalposition_2-9-F`*0.0812691958414425)+(TeamPositionCount$`finalposition_2-9-F-C`*0.413995392458259)+(TeamPositionCount$`finalposition_3-2-F`*0.262627044814327)+(TeamPositionCount$`finalposition_3-3-G`*-0.108945445316831)+(TeamPositionCount$`finalposition_3-7-G-F`*-0.77564971312975)+(TeamPositionCount$`finalposition_3-9-G`*0.178506082867071)+(TeamPositionCount$`finalposition_4-7-G`*-0.157209328604681)+(TeamPositionCount$`finalposition_5-1-G`*1.15125073991653)+(TeamPositionCount$`finalposition_5-2-F`*0.16210466186243)+(TeamPositionCount$`finalposition_5-4-C`*0.13981998227465)+(TeamPositionCount$`finalposition_5-4-F-C`*0.32047796726977)+(TeamPositionCount$`finalposition_5-8-F-C`*-0.328449031920993)+(TeamPositionCount$`finalposition_6-6-G`*-0.0555666095005011)+(TeamPositionCount$`finalposition_7-1-F`*0.118258432954354)+(TeamPositionCount$`finalposition_7-1-G`*0.0577563664290085)+(TeamPositionCount$`finalposition_7-2-F`*0.130847088836247)+(TeamPositionCount$`finalposition_7-4-C`*0.334046603429908)+(TeamPositionCount$`finalposition_7-4-F`*0.210530465402033)+(TeamPositionCount$`finalposition_7-9-C`*0.346064285885375)+(TeamPositionCount$`finalposition_7-9-F`*0.0793527313948296)+(TeamPositionCount$`finalposition_8-2-G`*0.0985030410366538)+(TeamPositionCount$`finalposition_8-3-G`*-0.0922473932176084)+(TeamPositionCount$`finalposition_8-4-G`*-0.577143462051084)+(TeamPositionCount$`finalposition_8-6-G`*-0.108697820787937)+(TeamPositionCount$`finalposition_8-7-G`*-0.506351534493543)+(TeamPositionCount$`finalposition_9-4-F-C`*0.379997063248185)+(TeamPositionCount$`finalposition_9-7-F`*-0.218710508698438)
+
+  
+TeamPositionCount$AllPosFinal4Pred<-(TeamPositionCount$`finalposition_1-3-G`*-0.112719873804713)+(TeamPositionCount$`finalposition_2-4-F`*0.103871853278263)+(TeamPositionCount$`finalposition_2-9-F-C`*0.480085711195851)+(TeamPositionCount$`finalposition_3-9-G-F`*0.290244528644961)+(TeamPositionCount$`finalposition_5-2-F`*0.175558857462943)+(TeamPositionCount$`finalposition_5-4-C`*0.107384304169568)+(TeamPositionCount$`finalposition_5-4-F-C`*0.142443860015417)+(TeamPositionCount$`finalposition_7-1-F`*0.0807758789007957)+(TeamPositionCount$`finalposition_7-1-G`*0.0347369861961432)+(TeamPositionCount$`finalposition_7-4-C`*0.172785463594947)+(TeamPositionCount$`finalposition_7-4-F`*0.107062692924974)+(TeamPositionCount$`finalposition_7-5-F`*0.301176544254724)+(TeamPositionCount$`finalposition_8-1-G`*0.0420038059700678)+(TeamPositionCount$`finalposition_8-2-G`*0.0841353210232613)+(TeamPositionCount$`finalposition_9-5-F`*0.316270410492238)
+
+
+TeamPositionCount$AllPosFinalPred<-(TeamPositionCount$`finalposition_1-8-G`*-0.0926498644174197)+(TeamPositionCount$`finalposition_2-4-F`*0.0468526959385329)+(TeamPositionCount$`finalposition_2-9-F`*0.035089638494569)+(TeamPositionCount$`finalposition_3-2-G-F`*0.16538394274697)+(TeamPositionCount$`finalposition_3-7-F`*0.121171229043872)+(TeamPositionCount$`finalposition_3-9-G-F`*0.314326879716792)+(TeamPositionCount$`finalposition_5-2-F`*0.138167752038267)+(TeamPositionCount$`finalposition_5-4-C`*0.0723434175511087)+(TeamPositionCount$`finalposition_5-4-F-C`*0.171096060087857)+(TeamPositionCount$`finalposition_7-1-F`*0.0838845049915447)+(TeamPositionCount$`finalposition_7-4-F`*0.040570199334979)+(TeamPositionCount$`finalposition_8-1-G`*0.0322919392388532)+(TeamPositionCount$`finalposition_8-3-G`*-0.0446978123138135)+(TeamPositionCount$`finalposition_8-9-C`*-0.440496390979412)+(TeamPositionCount$`finalposition_9-2-G`*-0.0458781161700454)+(TeamPositionCount$`finalposition_9-5-F`*0.308166956088176)+(TeamPositionCount$`finalposition_9-6-F`*0.128725337260719)
+
+
+TeamPositionCount$AllPosChampionPred<-(TeamPositionCount$`finalposition_1-3-G`*-0.0621685579653267)+(TeamPositionCount$`finalposition_1-6-F`*0.0907080147295883)+(TeamPositionCount$`finalposition_1-8-G`*-0.0731312821698909)+(TeamPositionCount$`finalposition_2-4-F`*0.0312758432918066)+(TeamPositionCount$`finalposition_3-2-G-F`*0.17708573283199)+(TeamPositionCount$`finalposition_3-9-G-F`*0.307455503156844)+(TeamPositionCount$`finalposition_5-4-C`*0.0483956332407527)+(TeamPositionCount$`finalposition_7-4-F`*0.0465859373234348)+(TeamPositionCount$`finalposition_8-2-G`*0.0424012647621334)+(TeamPositionCount$`finalposition_8-3-G`*-0.0303255008486852)+(TeamPositionCount$`finalposition_8-9-C`*-0.477905573048717)+(TeamPositionCount$`finalposition_9-2-F`*0.0630050521651577)+(TeamPositionCount$`finalposition_9-5-F`*0.325112331630943)
+
+  
+TeamPositionPred <- TeamPositionCount %>% select(c(schoolID, Round32 ,Sweet16, Elite8, Final4, Final, Champion, AllPosRound32Pred,  AllPosSweet16Pred ,AllPosElite8Pred, AllPosFinal4Pred, AllPosFinalPred, AllPosChampionPred))
+
+```
+
+##ALL PREDICTIONS
+```{r}
+
+all_preds <- merge(TeamPositionPred,marchmadness_preds,by=c("schoolID","Sweet16","Round32","Elite8","Final4","Final","Champion"), all=TRUE)
+
+all_preds$Round32TotalPred <- all_preds$OffRound32pred + all_preds$DefRound32pred + all_preds$AllPosRound32Pred
+all_preds$Sweet16TotalPred <- all_preds$OffSweet16pred + all_preds$DefSweet16pred + all_preds$AllPosSweet16Pred
+all_preds$Elite8TotalPred <- all_preds$Offelite8pred + all_preds$Defelite8pred + all_preds$AllPosElite8Pred
+all_preds$Final4TotalPred <- all_preds$Offfinal4pred + all_preds$Deffinal4pred + all_preds$AllPosFinal4Pred
+all_preds$FinalTotalPred <- all_preds$Offfinalpred + all_preds$Deffinalpred + all_preds$AllPosFinalPred
+all_preds$ChampionTotalPred <- all_preds$Offchampionpred + all_preds$Defchampionpred + all_preds$AllPosChampionPred
+
+all_preds <- all_preds %>% select(c(schoolID, Round32, Sweet16, Elite8, Final4, Final, Champion, Round32TotalPred, Sweet16TotalPred ,Elite8TotalPred, Final4TotalPred, FinalTotalPred, ChampionTotalPred, offanddef_round32pred, offanddef_sweet16pred, offanddef_elite8pred, offanddef_final4pred, offanddef_finalpred, offanddef_championpred))
+
+write_csv(all_preds, "ModelPredictions.csv")
+
+
+```
+
+
+
+
+

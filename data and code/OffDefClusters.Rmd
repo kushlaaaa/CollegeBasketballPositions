@@ -1,0 +1,78 @@
+
+```{r}
+library(tidyverse)
+library(mclust)
+
+rawdata <- read_csv("FinalPositionIDPlayerDataSet.csv")
+
+```
+
+
+```{r}
+colnames(rawdata)
+
+offensivedata <- rawdata %>% select(c(Min_per, usg, eFG, ORB_per, AST_per, TO_per, TPM, TP_per, FT_per, ftr, ht, weight, exp, close2att, close2_per, far2att, far2_per, dunkatt, dunk_per, obpm))
+offensivedata[is.na(offensivedata)] <- 0
+
+defensivedata <- rawdata %>% select(c(Min_per, DRB_per, pfr, stl_per, blk_per, ht, dbpm, stops, weight, exp))
+defensivedata[is.na(defensivedata)] <- 0
+
+
+offdf <- scale(offensivedata)
+offcluster <- Mclust(offdf)
+summary(offcluster)
+offensivedata$Cluster <- offcluster$classification
+offensivedata$cluster1prob <- offcluster$z[,1]
+offensivedata$cluster2prob <- offcluster$z[,2]
+offensivedata$cluster3prob <- offcluster$z[,3]
+offensivedata$cluster4prob <- offcluster$z[,4]
+offensivedata$cluster5prob <- offcluster$z[,5]
+offensivedata$cluster6prob <- offcluster$z[,6]
+offensivedata$cluster7prob <- offcluster$z[,7]
+offensivedata$cluster8prob <- offcluster$z[,8]
+offensivedata$cluster9prob <- offcluster$z[,9]
+offensivedata$player_name <- rawdata$player_name
+write_csv(offensivedata, "OffCluster.csv")
+
+
+defdf <- scale(defensivedata)
+defcluster <- Mclust(defdf)
+summary(defcluster)
+defensivedata$Cluster <- defcluster$classification
+defensivedata$cluster1prob <- defcluster$z[,1]
+defensivedata$cluster2prob <- defcluster$z[,2]
+defensivedata$cluster3prob <- defcluster$z[,3]
+defensivedata$cluster4prob <- defcluster$z[,4]
+defensivedata$cluster5prob <- defcluster$z[,5]
+defensivedata$cluster6prob <- defcluster$z[,6]
+defensivedata$cluster7prob <- defcluster$z[,7]
+defensivedata$cluster8prob <- defcluster$z[,8]
+defensivedata$cluster9prob <- defcluster$z[,9]
+defensivedata$player_name <- rawdata$player_name
+write_csv(defensivedata, "DefCluster.csv")
+
+rawdata$OffCluster <- offcluster$classification
+rawdata$OffCluster1prob <- offcluster$z[,1]
+rawdata$OffCluster2prob <- offcluster$z[,2]
+rawdata$OffCluster3prob <- offcluster$z[,3]
+rawdata$OffCluster4prob <- offcluster$z[,4]
+rawdata$OffCluster5prob <- offcluster$z[,5]
+rawdata$OffCluster6prob <- offcluster$z[,6]
+rawdata$OffCluster7prob <- offcluster$z[,7]
+rawdata$OffCluster8prob <- offcluster$z[,8]
+rawdata$OffCluster9prob <- offcluster$z[,9]
+
+rawdata$DefCluster <- defcluster$classification
+rawdata$DefCluster1prob <- defcluster$z[,1]
+rawdata$DefCluster2prob <- defcluster$z[,2]
+rawdata$DefCluster3prob <- defcluster$z[,3]
+rawdata$DefCluster4prob <- defcluster$z[,4]
+rawdata$DefCluster5prob <- defcluster$z[,5]
+rawdata$DefCluster6prob <- defcluster$z[,6]
+rawdata$DefCluster7prob <- defcluster$z[,7]
+rawdata$DefCluster8prob <- defcluster$z[,8]
+rawdata$DefCluster9prob <- defcluster$z[,9]
+
+write_csv(rawdata, "ClusteredData.csv")
+```
+

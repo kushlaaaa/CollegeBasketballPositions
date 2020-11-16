@@ -1,0 +1,38 @@
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(fastDummies)
+
+rawdata <- read_csv("FinalPositionIDPlayerDataSet.csv")
+
+```
+
+```{r}
+
+rfpositiondata <- rawdata %>% select(c(Pos, ht, weight, close2att, far2att, dunkatt, TPA, AST_per, blk_per, stl_per, ORB_per, DRB_per))
+rfpositiondata <- fastDummies::dummy_cols(rfpositiondata, select_columns = "Pos")
+rfpositiondata[is.na(rfpositiondata)] <- 0
+
+colnames(rawdata)
+
+posCdata <- rfpositiondata %>% select(-c(Pos, Pos_F, Pos_G))
+posFdata <- rfpositiondata %>% select(-c(Pos, Pos_C, Pos_G))
+posGdata <- rfpositiondata %>% select(-c(Pos, Pos_F, Pos_C))
+
+CenterRF <- randomForest(Pos_C ~ ., data=posCdata, ntree=1000)
+ForwardRF <- randomForest(Pos_F ~ ., data=posFdata, ntree=1000)
+GuardRF <- randomForest(Pos_G ~ ., data=posGdata, ntree=1000)
+
+
+CenterPredict = predict(CenterRF, posCdata)
+ForwardPredict = predict(ForwardRF, posFdata)
+GuardPredict = predict(GuardRF, posGdata)
+
+rawdata$PredictCenter <- CenterPredict
+rawdata$PredictForward <- ForwardPredict
+rawdata$PredictGuard <- GuardPredict
+
+write_csv(rawdata, "RFData.csv")
+```
+

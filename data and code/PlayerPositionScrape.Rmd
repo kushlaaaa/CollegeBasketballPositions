@@ -1,0 +1,48 @@
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(dplyr)
+
+
+url <- ("https://www.sports-reference.com/cbb/schools/")
+webpage <- read_html(url)
+webpage %>% html_nodes("a") %>% html_attr(name="href") -> teams
+teams %>% tail(-32) -> teams
+teams %>% strsplit('/') -> teams_split
+teams_list <- c()
+
+for (b in 1:length(teams_split)){
+  teams_split[[b]][4] -> team_name
+  teams_list <- append(teams_list, team_name, after = length(teams_list))
+}
+
+teams_list %>% head(480) -> team
+
+```
+
+```{r}
+playerposition <- tibble()
+
+for(a in 1:length(team)){
+  for(year in 2010:2019){
+    url <- paste("https://www.sports-reference.com/cbb/schools/",team[a],"/",year,".html", sep = "") 
+    webpage <- tryCatch(read_html(url), error = function(e){NULL})
+    if(!is.null(webpage)){
+      table <- html_table(webpage)
+      table <- table[[1]]
+      table <- table %>% select(c(Player, Class, Weight, Pos))
+      table$year <- year
+      table$team <- team[[a]]
+      playerposition <- rbind(playerposition, table)
+    }
+  }
+}
+
+
+
+
+write_csv(playerposition, "playerposition.csv")
+
+```
+

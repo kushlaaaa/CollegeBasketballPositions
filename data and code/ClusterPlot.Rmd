@@ -1,0 +1,20 @@
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+```{r}
+data <- read_csv("Cluster Count.csv")
+
+plot <- ggplot(data=data, aes(x=Cluster, y=Offense)) + geom_bar(stat="identity", aes(fill=factor(Cluster))) + geom_text(aes(label=Offense), vjust=-0.3) + theme_bw() + ggtitle("Offensive Cluster Count") + labs(fill = "OffCluster")
+  
+  
+ggsave("OffClusterCount.jpeg", plot)
+
+defplot <- ggplot(data=data, aes(x=Cluster, y=Defense)) + geom_bar(stat="identity", aes(fill=factor(Cluster))) + geom_text(aes(label=Defense), vjust=-0.3) + theme_bw() + ggtitle("Defense Cluster Count") + labs(fill = "DefCluster")
+  
+  
+ggsave("DefClusterCount.jpeg", defplot)
+```
+
